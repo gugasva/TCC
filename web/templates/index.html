@@ -1,0 +1,54 @@
+<!-- templates/index.html - Web App com análise em tempo real via câmera -->
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Análise de Exercício</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 2em; }
+    video { width: 640px; border: 2px solid #ccc; }
+    canvas { display: none; }
+    #status { font-size: 1.2em; margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <h1>IA em Tempo Real</h1>
+  <video id="video" autoplay muted width="640"></video>
+  <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+  <p id="status">🔄 Aguardando...</p>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+
+    async function startCamera() {
+        const stream = await navigator.mediaDevices.getUserMedia({video: { width: 640, height: 480 }});
+      video.srcObject = stream;
+    }
+
+    async function enviarFrame() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(async (blob) => {
+        const formData = new FormData();
+        formData.append('frame', blob, 'frame.jpg');
+
+        try {
+          const resp = await fetch('/prever', {
+            method: 'POST',
+            body: formData
+          });
+          const json = await resp.json();
+          statusEl.innerText = ` Predição: ${json.classe.toUpperCase()} (${(json.confianca * 100).toFixed(1)}%)`;
+        } catch (e) {
+          statusEl.innerText = ' Erro na comunicação com o servidor';
+        }
+      }, 'image/jpeg');
+    }
+
+    startCamera();
+    setInterval(enviarFrame, 1000); // envia um frame por segundo
+  </script>
+</body>
+</html>

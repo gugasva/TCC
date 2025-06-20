@@ -1,90 +1,73 @@
 import cv2
 import mediapipe as mp
-import csv
 import os
-import numpy as np
 from utils import calcular_angulo
+from db_conexao import salvar_dado_treinamento
 
-# Caminho base dos vídeos
-BASE_DIR = 'videos'  # deve conter 'correto/' e 'incorreto/'
-
-# Saída do CSV
-saida_csv = 'dados_treinamento.csv'
-if not os.path.exists(saida_csv):
-    with open(saida_csv, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            'angulo_braco_direito', 'y_punho_direito', 'y_ombro_direito',
-            'angulo_braco_esquerdo', 'y_punho_esquerdo', 'y_ombro_esquerdo',
-            'rotulo'])
-
-# Inicialização do MediaPipe
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
-mp_drawing = mp.solutions.drawing_utils
 
-# Varre os diretórios de vídeos
-for rotulo in os.listdir(BASE_DIR):
-    pasta = os.path.join(BASE_DIR, rotulo)
-    if not os.path.isdir(pasta):
-        continue
+# Caminhos dos vídeos organizados por rótulo
+ROTULOS_VIDEOS = {
+    r'C:\Users\gusta\OneDrive\Desktop\tcc\pratico\videos\correto': 'correto',
+    r'C:\Users\gusta\OneDrive\Desktop\tcc\pratico\videos\incorreto': 'incorreto'
+}
 
-    for arquivo in os.listdir(pasta):
-        if not arquivo.lower().endswith(('.mp4', '.avi', '.mov')):
-            continue
+def processar_video(caminho_video, rotulo):
+    cap = cv2.VideoCapture(caminho_video)
+    print(f"Processando: {caminho_video} | Rótulo: {rotulo}")
 
-        caminho_video = os.path.join(pasta, arquivo)
-        print(f'Processando: {caminho_video} | Rótulo: {rotulo}')
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-        cap = cv2.VideoCapture(caminho_video)
-        if not cap.isOpened():
-            print(f'[ERRO] Não foi possível abrir o vídeo: {caminho_video}')
-            continue
+        h, w, _ = frame.shape
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = pose.process(frame_rgb)
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+        if result.pose_landmarks:
+            lm = result.pose_landmarks.landmark
 
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = pose.process(frame_rgb)
+            # Direito
+            ombro_d = [lm[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x * w,
+                       lm[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y * h]
+            cotovelo_d = [lm[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x * w,
+                          lm[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y * h]
+            punho_d = [lm[mp_pose.PoseLandmark.RIGHT_WRIST.value].x * w,
+                       lm[mp_pose.PoseLandmark.RIGHT_WRIST.value].y * h]
 
-            if result.pose_landmarks:
-                landmarks = result.pose_landmarks.landmark
-                h, w, _ = frame.shape
+            # Esquerdo
+            ombro_e = [lm[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x * w,
+                       lm[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y * h]
+            cotovelo_e = [lm[mp_pose.PoseLandmark.LEFT_ELBOW.value].x * w,
+                          lm[mp_pose.PoseLandmark.LEFT_ELBOW.value].y * h]
+            punho_e = [lm[mp_pose.PoseLandmark.LEFT_WRIST.value].x * w,
+                       lm[mp_pose.PoseLandmark.LEFT_WRIST.value].y * h]
 
-                # Braço direito
-                ombro_d = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x * w,
-                           landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y * h]
-                cotovelo_d = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x * w,
-                              landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y * h]
-                punho_d = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x * w,
-                           landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y * h]
-                y_punho_d = landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y
-                y_ombro_d = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y
-                angulo_d = calcular_angulo(ombro_d, cotovelo_d, punho_d)
+            angulo_d = calcular_angulo(ombro_d, cotovelo_d, punho_d)
+            angulo_e = calcular_angulo(ombro_e, cotovelo_e, punho_e)
 
-                # Braço esquerdo
-                ombro_e = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x * w,
-                           landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y * h]
-                cotovelo_e = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x * w,
-                              landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y * h]
-                punho_e = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x * w,
-                           landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y * h]
-                y_punho_e = landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y
-                y_ombro_e = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y
-                angulo_e = calcular_angulo(ombro_e, cotovelo_e, punho_e)
+            y_punho_d = lm[mp_pose.PoseLandmark.RIGHT_WRIST.value].y
+            y_punho_e = lm[mp_pose.PoseLandmark.LEFT_WRIST.value].y
+            y_ombro_d = lm[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y
+            y_ombro_e = lm[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y
 
-                # Salvar no CSV
-                with open(saida_csv, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([
-                        angulo_d, y_punho_d, y_ombro_d,
-                        angulo_e, y_punho_e, y_ombro_e,
-                        rotulo
-                    ])
+            dados = (
+                angulo_d, y_punho_d, y_ombro_d,
+                angulo_e, y_punho_e, y_ombro_e,
+                rotulo
+            )
 
-        cap.release()
+            salvar_dado_treinamento(dados)
 
-cv2.destroyAllWindows()
-print("✅ Coleta concluída.")
+    cap.release()
+
+# Processar todos os vídeos das pastas
+for pasta, rotulo in ROTULOS_VIDEOS.items():
+    for nome_arquivo in os.listdir(pasta):
+        if nome_arquivo.endswith(('.mp4', '.avi', '.mov')):
+            caminho = os.path.join(pasta, nome_arquivo)
+            processar_video(caminho, rotulo)
+
+print("✅ Coleta finalizada e dados salvos no banco.")
